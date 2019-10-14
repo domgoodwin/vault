@@ -202,9 +202,9 @@ The `library` endpoint configures the sets of service accounts Vault will offer 
 * `service_account_names` (string: "", or list: [] <required>): The names of all the service accounts that can be 
 checked out from this set. These service accounts must only be used by Vault, and may only be in one set. These 
 service accounts must already exist in Active Directory.
-* `ttl` (duration: "24h", <optional>): The maximum amount of time a check-out lasts before Vault 
+* `ttl` (duration: "24h", <optional>): The maximum amount of time a single check-out lasts before Vault 
 automatically checks it back in. Defaults to 24 hours. Setting it to zero reflects an unlimited lending period.
-* `max_ttl` (duration: "24h", <optional>): The maximum amount of time a check-out lasts before Vault 
+* `max_ttl` (duration: "24h", <optional>): The maximum amount of time a check-out last with renewal before Vault 
 automatically checks it back in. Defaults to 24 hours. Setting it to zero reflects an unlimited lending period.
 * `disable_check_in_enforcement` (bool: false, <optional>): Disable enforcing that service accounts must be 
 checked in by the entity or client token that checked them out. Defaults to false.

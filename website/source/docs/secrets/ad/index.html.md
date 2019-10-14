@@ -18,13 +18,11 @@ This is designed for a high-load environment where many instances may be accessi
 a shared password simultaneously. With a simple set up and a simple creds API,
 it doesn't require instances to be manually registered in advance to gain access. 
 As long as access has been granted to the creds path via a method like 
-[AppRole](https://www.vaultproject.io/api/auth/approle/index.html), they're available.
-
-Passwords are lazily rotated based on preset TTLs and can have a length configured to meet 
-your needs.
+[AppRole](https://www.vaultproject.io/api/auth/approle/index.html), they're available. Passwords are 
+lazily rotated based on preset TTLs and can have a length configured to meet your needs.
 
 The second feature (service account check-out) is where a library of service accounts can
-be checked out by a person or machine. Vault will automatically rotate the password
+be checked out by a person or machines. Vault will automatically rotate the password
 each time a service account is checked in. Service accounts can be voluntarily checked in, or Vault
 will check them in when their lending period (or, "ttl", in Vault's language) ends.
 
@@ -219,6 +217,9 @@ lease_renewable         true
 password                ?@09AZerLLuJfEMbRqP+3yfQYDSq6laP48TCJRBJaJu/kDKLsq9WxL9szVAvL/E1
 service_account_name    buzz@example.com
 ```
+This can be a nice way to say, "Although I _can_ have a check-out for 24 hours, if I 
+haven't checked it in after 30 minutes, I forgot or I'm a dead instance, so you can just
+check it back in."
 
 If no service accounts are available for check-out, Vault will return a 400 Bad Request.
 ```text
