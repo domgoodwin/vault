@@ -194,21 +194,20 @@ $ curl \
 
 ## Library management
 
-The `library` endpoint configures how Vault will provide service accounts for check-out.
+The `library` endpoint configures the sets of service accounts Vault will offer for check-out.
 
 ### Parameters
 
-* `name` (string: "", <required>): The name of the library service account set.
+* `name` (string: "", <required>): The name of the set of service accounts.
 * `service_account_names` (string: "", or list: [] <required>): The names of all the service accounts that can be 
-checked out from this library set. These service accounts must be only used by Vault. If a company finds that their 
-users or applications are waiting too long for check-outs, they should reduce resource contention by adding more 
-service accounts to the set or pursue lower levels of parallelism.
-* `ttl` (duration: "24h", <optional>): The maximum amount of time a checkout can be lent before Vault will 
-automatically check it back in. Defaults to 24 hours. Setting it to zero reflects an unlimited lending period.
-* `max_ttl` (duration: "24h", <optional>): The maximum amount of time a checkout can be lent before Vault will 
+checked out from this set. These service accounts must only be used by Vault, and may only be in one set. These 
+service accounts must already exist in Active Directory.
+* `ttl` (duration: "24h", <optional>): The maximum amount of time a check-out lasts before Vault 
+automatically checks it back in. Defaults to 24 hours. Setting it to zero reflects an unlimited lending period.
+* `max_ttl` (duration: "24h", <optional>): The maximum amount of time a check-out lasts before Vault 
 automatically checks it back in. Defaults to 24 hours. Setting it to zero reflects an unlimited lending period.
 * `disable_check_in_enforcement` (bool: false, <optional>): Disable enforcing that service accounts must be 
-checked in by the entity that checked them out. Defaults to false.
+checked in by the entity or client token that checked them out. Defaults to false.
 
 When adding a service account to the library, Vault verifies it already exists in Active Directory.
 
@@ -229,7 +228,7 @@ $ curl \
     http://127.0.0.1:8200/v1/ad/library/accounting-team
 ```
 
-### Sample Post Payload
+### Sample Post Set Payload
 
 ```json
 {
@@ -240,7 +239,7 @@ $ curl \
 }
 ```
 
-### Sample Get Library Set Response
+### Sample Get Set Response
 
 ```json
 {
@@ -265,14 +264,14 @@ Performing a `LIST` on the `/ad/library` endpoint will list the names of all the
 
 These endpoints help manage check-outs.
 
-### Check-out a credential from a library set
+### Check a credential out
 
 Returns a `200` if a credential is available, and a `400` if no credential is available.
 
-* `name` (string: "", <required>): The name of the library service account set.
-* `ttl` (duration: "", <optional>): The maximum amount of time a checkout can be lent before Vault will 
-automatically check it back in. Defaults to the set's `ttl`. If the requested `ttl` is higher than the 
-set's, the set's will be used.
+* `name` (string: "", <required>): The name of the set of service accounts.
+* `ttl` (duration: "", <optional>): The maximum amount of time a check-out lasts before Vault 
+automatically checks it back in. Defaults to 24 hours. Setting it to zero reflects an unlimited lending period.
+Defaults to the set's `ttl`. If the requested `ttl` is higher than the set's, the set's will be used.
 
 | Method   | Path                              |
 | :------- | :-------------------------------- |
@@ -313,20 +312,20 @@ $ curl \
 }
 ```
 
-### Check-in a credential to a library set
+### Check a credential in
 
 By default, check-in must be called by the same entity or client token as was used for check-out.
 To disable this behavior, use the `disable_check_in_enforcement` toggle on the library set. Or, use
-the `ad/library/manage/:set_name/check-in` behavior to force check-in the account. Access to the
+the `ad/library/manage/:set_name/check-in` behavior to force check-in of the account. Access to the
 "manage" endpoint should only be granted to highly privileged Vault users, like Vault operators.
 
 If a caller attempts to check in a service account they're not authorized to check in, they will
 receive an error response. If they attempt to check in a service account they _are_ authorized to
 check in, but it's _already_ checked in, they will receive a successful response but the account
 will not be included in the `check_ins` listed. `check_ins` shows which service accounts were checked
-in by this particular call.
+in _by this particular call_.
 
-* `name` (string: "", <required>): The name of the library service account set.
+* `name` (string: "", <required>): The name of the set of service accounts.
 * `service_account_names` (string: "", or list: [] <optional>): The names of all the service accounts to be
 checked in. May be omitted if only one is checked out. 
 
@@ -369,11 +368,11 @@ $ curl \
 }
 ```
 
-### Check the status of service accounts in a library set
+### Check the status of service accounts
 
-| Method   | Path                              |
-| :------- | :-------------------------------- |
-| `GET`   | `/ad/library/:set_name/status` |
+| Method   | Path                           |
+| :------- | :----------------------------- |
+| `GET`    | `/ad/library/:set_name/status` |
 
 ### Sample Get Request
 
