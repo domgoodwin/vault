@@ -11,9 +11,10 @@ description: |-
 # Active Directory Secrets Engine
 
 The Active Directory (AD) secrets engine is a plugin residing [here](https://github.com/hashicorp/vault-plugin-secrets-active-directory).
+It has two main features.
 
-The AD secrets engine rotates AD passwords dynamically,
-and is designed for a high-load environment where many instances may be accessing
+The first feature (password rotation) is where the AD secrets engine rotates AD passwords dynamically.
+This is designed for a high-load environment where many instances may be accessing
 a shared password simultaneously. With a simple set up and a simple creds API,
 it doesn't require instances to be manually registered in advance to gain access. 
 As long as access has been granted to the creds path via a method like 
@@ -22,7 +23,14 @@ As long as access has been granted to the creds path via a method like
 Passwords are lazily rotated based on preset TTLs and can have a length configured to meet 
 your needs.
 
-## A Note on Lazy Rotation
+The second feature (service account check-out) is where you can create a library of service accounts
+to be checked out by a person or group at your company. Vault will automatically rotate the password
+each time a service account is checked in. Service accounts can be voluntarily checked in, or Vault
+will check them in when their lending period (or, "ttl", in Vault's language) ends.
+
+## Password Rotation
+
+### A Note on Lazy Rotation
 
 To drive home the point that passwords are rotated "lazily", consider this scenario:
 
@@ -41,7 +49,7 @@ Therefore, the AD TTL can be considered a soft contract. It's fulfilled when the
 To ensure your passwords are rotated as expected, we'd recommend you configure services to request each password at least
 twice as often as its TTL.
 
-## A Note on Escaping
+### A Note on Escaping
 
 **It is up to the administrator** to provide properly escaped DNs. This
 includes the user DN, bind DN for search, and so on.
@@ -62,7 +70,7 @@ For reference, see [RFC 4514](https://www.ietf.org/rfc/rfc4514.txt) and this
 [TechNet post on characters to escape in Active
 Directory](http://social.technet.microsoft.com/wiki/contents/articles/5312.active-directory-characters-to-escape.aspx).
 
-## Quick Setup
+### Quick Setup
 
 Most secrets engines must be configured in advance before they can perform their
 functions. These steps are usually completed by an operator or configuration
@@ -110,9 +118,9 @@ this role.
 4. Grant "my-application" access to its creds at `ad/creds/my-application` using an 
 auth method like [AppRole](https://www.vaultproject.io/api/auth/approle/index.html).
 
-## FAQ
+### FAQ
 
-### What if someone directly rotates an Active Directory password that Vault is managing?
+#### What if someone directly rotates an Active Directory password that Vault is managing?
 
 If an administrator at your company rotates a password that Vault is managing,
 the next time an application asks _Vault_ for that password, Vault won't know
@@ -132,13 +140,175 @@ The password `ttl` on a role can be updated at any time to ensure that the
 responsibility of updating passwords can be left to Vault, rather than
 requiring manual administrator updates.
 
-### Why does Vault return the last password in addition to the current one?
+#### Why does Vault return the last password in addition to the current one?
 
 Active Directory promises _eventual consistency_, which means that new
 passwords may not be propagated to all instances immediately. To deal with
 this, Vault returns the current password with the last password if it's known.
 That way, if a new password isn't fully operational, the last password can also
 be used.
+
+## Service Account Check-Out
+
+Vault offers the ability to check service accounts in and out. This is a separate,
+different set of functionality from the password rotation feature above. Let's walk
+through how to use it, with explanation at each step.
+
+First we'd need to enable the AD secrets engine and tell it how to talk to our AD
+server just as we did above.
+
+```text
+$ vault secrets enable ad
+Success! Enabled the ad secrets engine at: ad/
+
+$ vault write ad/config \
+    binddn=$USERNAME \
+    bindpass=$PASSWORD \
+    url=ldaps://138.91.247.105 \
+    userdn='dc=example,dc=com'
+```
+
+Our next step would be to designate a set of service accounts for check-out.
+```text
+$ vault write ad/library/accounting-team \
+    service_account_names=fizz@example.com,buzz@example.com \
+    ttl=10h \
+    max_ttl=20h \
+    disable_check_in_enforcement=false
+```
+In this example, the service account names of `fizz@example.com` and `buzz@example.com` have
+already been created on your AD server. They've been set aside solely for Vault to check out
+and in. The `ttl` is how long each check-out will last before Vault checks in a service account,
+rotating its password during check-in. The `max_ttl` is the maximum amount of time it can live
+if it's renewed. These default to `24h`. Also by default, a service account must be checked in 
+by the same Vault entity or client token that checked it out. However, if this behavior causes 
+problems for you, you can set `disable_check_in_enforcement=true`.
+
+When a library of service accounts has been created, you can check their status to see if they're
+available or checked out.
+
+```text
+$ vault read ad/library/accounting-team/status
+Key                 Value
+---                 -----
+buzz@example.com    map[available:true]
+fizz@example.com    map[available:true]
+```
+
+To check out any service account that's available, simply execute:
+```text
+$ vault write -f ad/library/accounting-team/check-out
+Key                     Value
+---                     -----
+lease_id                ad/library/accounting-team/check-out/EpuS8cX7uEsDzOwW9kkKOyGW
+lease_duration          10h
+lease_renewable         true
+password                ?@09AZKh03hBORZPJcTDgLfntlHqxLy29tcQjPVThzuwWAx/Twx4a2ZcRQRqrZ1w
+service_account_name    fizz@example.com
+```
+
+If the default `ttl` for your check-out is higher than you need, you can alternatively state that
+you want your check-out to last for a shorter time by using:
+```text
+$ vault write ad/library/accounting-team/check-out ttl=10h
+Key                     Value
+---                     -----
+lease_id                ad/library/accounting-team/check-out/gMonJ2jB6kYs6d3Vw37WFDCY
+lease_duration          10h
+lease_renewable         true
+password                ?@09AZerLLuJfEMbRqP+3yfQYDSq6laP48TCJRBJaJu/kDKLsq9WxL9szVAvL/E1
+service_account_name    buzz@example.com
+```
+
+If no service accounts are available for check-out, Vault will return a 400 Bad Request.
+```text
+$ vault write ad/library/accounting-team/check-out
+Error writing data to ad/library/accounting-team/check-out: Error making API request.
+
+URL: PUT http://localhost:8200/v1/ad/library/accounting-team/check-out
+Code: 400. Errors:
+```
+
+If you'd like to extend a check-out, this can be done by renewing its lease.
+```text
+$ vault lease renew ad/library/accounting-team/check-out/0C2wmeaDmsToVFc0zDiX9cMq
+Key                Value
+---                -----
+lease_id           ad/library/accounting-team/check-out/0C2wmeaDmsToVFc0zDiX9cMq
+lease_duration     10h
+lease_renewable    true
+```
+Renewing a check-out means its current password will live longer, since passwords are rotated 
+anytime a password is checked in either by a caller, or by Vault because the check-out `ttl`
+ended.
+
+When you're ready to check your service account back in for others to use, simply call:
+```text
+$ vault write -f ad/library/accounting-team/check-in
+Key          Value
+---          -----
+check_ins    [fizz@example.com]
+```
+
+Most of the time this will just work, but if you have multiple service accounts checked out, Vault
+will need to know which one(s) to check in.
+```text
+$ vault write ad/library/accounting-team/check-in service_account_names=fizz@example.com
+Key          Value
+---          -----
+check_ins    [fizz@example.com]
+```
+
+To perform a check-in, Vault verifies that you _should_ be able to check in a given service account.
+To do this, it looks for either the same [entity ID](https://learn.hashicorp.com/vault/identity-access-management/iam-identity) 
+as was used to check out the account, or the same client token.
+
+If you're unable to check your service account back in, or you simply don't get around to it,
+Vault will check it back in for you when the `ttl` expires. However, if you don't want to wait 
+that long, service accounts can be forcibly checked in by a highly privileged user through:
+
+```text
+$ vault write -f ad/library/manage/accounting-team/check-in
+Key          Value
+---          -----
+check_ins    [fizz@example.com]
+```
+
+Or, alternatively, revoking the secret's lease has the same effect.
+```text
+$ vault lease revoke ad/library/accounting-team/check-out/PvBVG0m7pEg2940Cb3Jw3KpJ
+All revocation operations queued successfully!
+```
+
+### Troubleshooting
+
+#### I get a lot of 400 Bad Request's when trying to check out service accounts.
+
+This will occur when you don't have enough service accounts for those using them. Let's
+suppose our "accounting-team" service accounts are the ones being requested. When none
+were available, Vault would log at debug level: "'accounting-team' had no check-outs 
+available". It would also increment a metric containing the strings "active directory", 
+"check-out", "unavailable", and "accounting-team".
+
+Once you've diagnosed _which_ library needs more service accounts for checkout, you'd 
+merely create a new service account for it to use in Active Directory, then add it to 
+Vault like so:
+
+```text
+$ vault write ad/library/accounting-team \
+    service_account_names=fizz@example.com,buzz@example.com,new@example.com
+```
+
+In this example, fizz and buzz were pre-existing but were still included in the call 
+because we'd like them to exist in the resulting set. The new account was appended to
+the end.
+
+#### Sometimes Vault gives me a password but then AD says it's not valid.
+
+Active Directory is eventually consistent, meaning that it can take some time for word
+of a new password to travel across all AD instances in a cluster. In larger clusters, we
+have observed the password taking over 10 seconds to propagate fully. The simplest way to 
+handle this is to simply retry.
 
 ## API
 
