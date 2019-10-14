@@ -23,8 +23,8 @@ As long as access has been granted to the creds path via a method like
 Passwords are lazily rotated based on preset TTLs and can have a length configured to meet 
 your needs.
 
-The second feature (service account check-out) is where you can create a library of service accounts
-to be checked out by a person or group at your company. Vault will automatically rotate the password
+The second feature (service account check-out) is where a library of service accounts can
+be checked out by a person or machine. Vault will automatically rotate the password
 each time a service account is checked in. Service accounts can be voluntarily checked in, or Vault
 will check them in when their lending period (or, "ttl", in Vault's language) ends.
 
@@ -154,7 +154,7 @@ Vault offers the ability to check service accounts in and out. This is a separat
 different set of functionality from the password rotation feature above. Let's walk
 through how to use it, with explanation at each step.
 
-First we'd need to enable the AD secrets engine and tell it how to talk to our AD
+First we'll need to enable the AD secrets engine and tell it how to talk to our AD
 server just as we did above.
 
 ```text
@@ -168,7 +168,7 @@ $ vault write ad/config \
     userdn='dc=example,dc=com'
 ```
 
-Our next step would be to designate a set of service accounts for check-out.
+Our next step is to designate a set of service accounts for check-out.
 ```text
 $ vault write ad/library/accounting-team \
     service_account_names=fizz@example.com,buzz@example.com \
@@ -177,14 +177,14 @@ $ vault write ad/library/accounting-team \
     disable_check_in_enforcement=false
 ```
 In this example, the service account names of `fizz@example.com` and `buzz@example.com` have
-already been created on your AD server. They've been set aside solely for Vault to check out
-and in. The `ttl` is how long each check-out will last before Vault checks in a service account,
+already been created on the remote AD server. They've been set aside solely for Vault to handle. 
+The `ttl` is how long each check-out will last before Vault checks in a service account,
 rotating its password during check-in. The `max_ttl` is the maximum amount of time it can live
 if it's renewed. These default to `24h`. Also by default, a service account must be checked in 
 by the same Vault entity or client token that checked it out. However, if this behavior causes 
-problems for you, you can set `disable_check_in_enforcement=true`.
+problems, set `disable_check_in_enforcement=true`.
 
-When a library of service accounts has been created, you can check their status to see if they're
+When a library of service accounts has been created, view their status at any time to see if they're
 available or checked out.
 
 ```text
@@ -207,14 +207,14 @@ password                ?@09AZKh03hBORZPJcTDgLfntlHqxLy29tcQjPVThzuwWAx/Twx4a2Zc
 service_account_name    fizz@example.com
 ```
 
-If the default `ttl` for your check-out is higher than you need, you can alternatively state that
-you want your check-out to last for a shorter time by using:
+If the default `ttl` for the check-out is higher than needed, set the check-out to last 
+for a shorter time by using:
 ```text
-$ vault write ad/library/accounting-team/check-out ttl=10h
+$ vault write ad/library/accounting-team/check-out ttl=30m
 Key                     Value
 ---                     -----
 lease_id                ad/library/accounting-team/check-out/gMonJ2jB6kYs6d3Vw37WFDCY
-lease_duration          10h
+lease_duration          30m
 lease_renewable         true
 password                ?@09AZerLLuJfEMbRqP+3yfQYDSq6laP48TCJRBJaJu/kDKLsq9WxL9szVAvL/E1
 service_account_name    buzz@example.com
@@ -229,7 +229,7 @@ URL: PUT http://localhost:8200/v1/ad/library/accounting-team/check-out
 Code: 400. Errors:
 ```
 
-If you'd like to extend a check-out, this can be done by renewing its lease.
+To extend a check-out, renew its lease.
 ```text
 $ vault lease renew ad/library/accounting-team/check-out/0C2wmeaDmsToVFc0zDiX9cMq
 Key                Value
@@ -239,10 +239,10 @@ lease_duration     10h
 lease_renewable    true
 ```
 Renewing a check-out means its current password will live longer, since passwords are rotated 
-anytime a password is checked in either by a caller, or by Vault because the check-out `ttl`
-ended.
+anytime a password is _checked in_ either by a caller, or by Vault because the check-out `ttl`
+ends.
 
-When you're ready to check your service account back in for others to use, simply call:
+To check a service account back in for others to use, call:
 ```text
 $ vault write -f ad/library/accounting-team/check-in
 Key          Value
@@ -250,8 +250,8 @@ Key          Value
 check_ins    [fizz@example.com]
 ```
 
-Most of the time this will just work, but if you have multiple service accounts checked out, Vault
-will need to know which one(s) to check in.
+Most of the time this will just work, but if multiple service accounts checked out by the same 
+caller, Vault will need to know which one(s) to check in.
 ```text
 $ vault write ad/library/accounting-team/check-in service_account_names=fizz@example.com
 Key          Value
@@ -259,13 +259,13 @@ Key          Value
 check_ins    [fizz@example.com]
 ```
 
-To perform a check-in, Vault verifies that you _should_ be able to check in a given service account.
+To perform a check-in, Vault verifies that the caller _should_ be able to check in a given service account.
 To do this, it looks for either the same [entity ID](https://learn.hashicorp.com/vault/identity-access-management/iam-identity) 
-as was used to check out the account, or the same client token.
+as was used to check out the service account, or the same client token.
 
-If you're unable to check your service account back in, or you simply don't get around to it,
-Vault will check it back in for you when the `ttl` expires. However, if you don't want to wait 
-that long, service accounts can be forcibly checked in by a highly privileged user through:
+If a caller is unable to check in a service account, or simply doesn't try,
+Vault will check it back in automatically when the `ttl` expires. However, if that is too long, 
+service accounts can be forcibly checked in by a highly privileged user through:
 
 ```text
 $ vault write -f ad/library/manage/accounting-team/check-in
@@ -284,14 +284,14 @@ All revocation operations queued successfully!
 
 #### I get a lot of 400 Bad Request's when trying to check out service accounts.
 
-This will occur when you don't have enough service accounts for those using them. Let's
-suppose our "accounting-team" service accounts are the ones being requested. When none
-were available, Vault would log at debug level: "'accounting-team' had no check-outs 
-available". It would also increment a metric containing the strings "active directory", 
-"check-out", "unavailable", and "accounting-team".
+This will occur when there aren't enough service accounts for those requesting them. Let's
+suppose our "accounting-team" service accounts are the ones being requested. When Vault
+receives a check-out call but none are available, Vault will log at debug level: 
+"'accounting-team' had no check-outs available". Vault will also increment a metric 
+containing the strings "active directory", "check-out", "unavailable", and "accounting-team".
 
-Once you've diagnosed _which_ library needs more service accounts for checkout, you'd 
-merely create a new service account for it to use in Active Directory, then add it to 
+Once it's known _which_ library needs more service accounts for checkout, fix this issue
+by merely creating a new service account for it to use in Active Directory, then adding it to 
 Vault like so:
 
 ```text
